@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lamumu’s Cosmic Farm Run - Endless Contest Version</title>
+<style>
+  :root {
+    --bg1: #0b1020;
+    --bg2: #141a35;
+    --hud: #e8f1ff;
+    --accent: #7ee787;
+    --danger: #ff6b6b;
+    --gold: #ffd166;
+    --white: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 20% 10%, #1d244a 0%, var(--bg1) 40%, #070a16 100%);
+    color: var(--hud);
+    overflow: hidden;
+  }
+  #wrap { display: grid; place-items: center; height: 100%; padding: 12px; }
+  canvas {
+    background: linear-gradient(180deg, rgba(14,22,53,1) 0%, rgba(7,9,20,1) 60%);
+    width: min(100vw - 24px, 960px);
+    height: calc((min(100vw - 24px, 960px))*0.6);
+    max-width: 960px;
+    max-height: 576px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+    display: block;
+  }
+  .hud { position: absolute; inset: 12px 12px auto 12px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,0.6); pointer-events: none;}
+  .pill { padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);}
+  .panel { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;}
+  .card { pointer-events: auto; background: rgba(20,24,45,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px 22px; width: min(92vw, 560px); text-align: center; backdrop-filter: blur(6px); box-shadow: 0 20px 60px rgba(0,0,0,0.6);}
+  button { cursor: pointer; border: 0; border-radius: 12px; padding: 10px 14px; background: #2a325f; color: var(--white); font-weight: 600; transition: transform .06s ease, background .2s ease;}
+  button:hover { transform: translateY(-1px); background: #323b72; }
+  button.primary { background: #3853e0; } button.primary:hover { background: #4a63ea; }
+  h1 { margin: 10px 0 6px; font-size: 28px; letter-spacing: 0.4px;}
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="960" height="576"></canvas>
+    <div class="hud" id="hud">
+      <div>
+        <span class="pill" id="hudScore">Score: 0</span>
+        <span class="pill" id="hudCoins">Crops: 0</span>
+        <span class="pill" id="hudDist">Dist: 0m</span>
+      </div>
+      <div>
+        <span class="pill" id="hudPU">Power-ups: —</span>
+      </div>
+    </div>
+
+    <!-- Start Panel -->
+    <div class="panel" id="startPanel">
+      <div class="card">
+        <h1>Lamumu’s Cosmic Farm Run</h1>
+        <p>Endless cosmic farm dash! Collect crops, avoid obstacles, and survive as long as possible!</p>
+        <div>
+          <button class="primary" id="btnStart">Start Run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Panel -->
+    <div class="panel" id="overPanel" style="display:none;">
+      <div class="card" id="overCard">
+        <h1>Game Over</h1>
+        <p id="overStats">You scored 0 and gathered 0 crops.</p>
+        <div>
+          <button id="btnRetry" class="primary">Run Again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+"use strict";
+const canvas = document.getElementById("game"), ctx = canvas.getContext("2d");
+const hudScore=document.getElementById("hudScore"), hudCoins=document.getElementById("hudCoins"), hudDist=document.getElementById("hudDist"), hudPU=document.getElementById("hudPU");
+const startPanel=document.getElementById("startPanel"), overPanel=document.getElementById("overPanel"), overStats=document.getElementById("overStats");
+const $=id=>document.getElementById(id);
+$("btnStart").onclick=startGame;
+$("btnRetry").onclick=startGame;
+
+const STATE={MENU:0,PLAY:1,OVER:2}; let gameState=STATE.MENU;
+const GROUND_Y=canvas.height-90, GRAVITY=0.75, JUMP_VY=-14.5, SLIDE_TIME=520, BASE_SPEED=6.2;
+const player={x:120,y:GROUND_Y-64,w:60,h:64,vy:0,onGround:true,sliding:false,slideUntil:0};
+let score=0,coins=0,dist=0,elapsed=0,baseSpeed=BASE_SPEED;
+const power={magnet:0,double:0,speed:0};
+const obstacles=[],pickups=[],powerups=[];
+const rand=(min,max)=>Math.random()*(max-min)+min;
+const choice=arr=>arr[(Math.random()*arr.length)|0];
+const keys={};
+window.addEventListener("keydown",e=>{keys[e.key]=true;if(gameState===STATE.PLAY){if(e.key===" "||e.key==="ArrowUp")jump();if(e.key==="ArrowDown")slide();}}); 
+window.addEventListener("keyup",e=>keys[e.key]=false);
+canvas.addEventListener("touchstart",e=>{if(gameState!==STATE.PLAY)return;const t=e.changedTouches[0];const rect=canvas.getBoundingClientRect();const x=t.clientX-rect.left;if(x<rect.width*0.48)slide();else jump();},{passive:true});
+
+function startGame(){resetRun();gameState=STATE.PLAY;startPanel.style.display="none";overPanel.style.display="none";}
+function gameOver(){gameState=STATE.OVER;overStats.textContent=`Score: ${Math.floor(score)} | Crops: ${Math.floor(coins)} | Distance: ${Math.floor(dist)}m`;overPanel.style.display="grid";}
+function resetRun(){player.y=GROUND_Y-player.h;player.vy=0;player.onGround=true;player.sliding=false;player.slideUntil=0;score=0;coins=0;dist=0;elapsed=0;baseSpeed=BASE_SPEED;obstacles.length=0;pickups.length=0;powerups.length=0;for(let i=6;i<20;i++){spawnCoinRow(900+i*120);if(i%4===0)spawnObstacle(900+i*150);if(i%7===0)spawnPowerup(900+i*180);}}
+
+function jump(){if(player.onGround&&!player.sliding){player.vy=JUMP_VY;player.onGround=false;}}
+function slide(){if(player.onGround&&!player.sliding){player.sliding=true;player.slideUntil=performance.now()+SLIDE_TIME;}}
+
+function spawnObstacle(x){const types=[{w:46,h:46,y:GROUND_Y-46},{w:36,h:80,y:GROUND_Y-80},{w:56,h:36,y:GROUND_Y-140}];const t=choice(types);obstacles.push({x,y:t.y,w:t.w,h:t.h});}
+function spawnCoinRow(x){const count=3+(Math.random()*4|0);const pattern=choice(["line","arc"]);if(pattern==="line"){const y=GROUND_Y-150-(Math.random()*60|0);for(let i=0;i<count;i++)pickups.push({x:x+i*34,y,r:10,type:"coin"});}else{const baseY=GROUND_Y-150;const amp=40;for(let i=0;i<count;i++){const yy=baseY-Math.sin(i/(count-1)*Math.PI)*amp;pickups.push({x:x+i*34,y:yy,r:10,type:"coin"});}}}
+function spawnPowerup(x){const kinds=["magnet","double","speed"];const kind=choice(kinds);const y=GROUND_Y-120-(Math.random()*60|0);powerups.push({x,y,w:28,h:28,kind});}
+function aabb(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function update(dt){const sec=dt/1000;elapsed+=sec;let speed=baseSpeed+(power.speed>0?3.5:0);dist+=speed*0.06*dt;player.vy+=GRAVITY;player.y+=player.vy;if(player.y+player.h>=GROUND_Y){player.y=GROUND_Y-player.h;player.vy=0;player.onGround=true;}else player.onGround=false;if(player.sliding&&performance.now()>=player.slideUntil)player.sliding=false;obstacles.forEach(o=>o.x-=speed);pickups.forEach(c=>c.x-=speed);powerups.forEach(p=>p.x-=speed);if(Math.random()<0.03)spawnCoinRow(canvas.width+40+Math.random()*60);if(Math.random()<0.015)spawnObstacle(canvas.width+60+Math.random()*120);if(Math.random()<0.006)spawnPowerup(canvas.width+80+Math.random()*200);for(let i=pickups.length-1;i>=0;i--){const c=pickups[i];const hit=Math.hypot((player.x+player.w/2)-c.x,(player.y+player.h/2)-c.y)<(c.r+Math.min(player.w,player.h)*0.35);if(hit){pickups.splice(i,1);coins+=1;score+=5;}else if(c.x<-50)pickups.splice(i,1);}for(let i=powerups.length-1;i>=0;i--){const p=powerups[i];const rect={x:p.x,y:p.y,w:p.w,h:p.h};const prect={x:player.x,y:player.y+(player.sliding?18:0),w:player.w,h:player.h-(player.sliding?18:0)};if(aabb(prect,rect)){powerups.splice(i,1);if(p.kind==="magnet")power.magnet=6;if(p.kind==="double")power.double=6;if(p.kind==="speed")power.speed=3;score+=10;}else if(p.x<-40)powerups.splice(i,1);}for(let i=obstacles.length-1;i>=0;i--){const o=obstacles[i];const prect={x:player.x,y:player.y+(player.sliding?18:0),w:player.w,h:player.h-(player.sliding?18:0)};if(aabb(prect,o)){gameOver();return;}if(o.x<-80)obstacles.splice(i,1);}for(const k of["magnet","double","speed"]){if(power[k]>0)power[k]=Math.max(0,power[k]-sec);}score+=speed*0.1;}
+
+function render(ts){ctx.clearRect(0,0,canvas.width,canvas.height);drawBackground(ts,baseSpeed+(power.speed>0?3.5:0));pickups.forEach(c=>drawCoin(c.x,c.y,c.r));powerups.forEach(p=>drawPowerupIcon(p.kind,p.x,p.y,p.w,p.h,true));obstacles.forEach(o=>{ctx.fillStyle="#7a8ab6";ctx.fillRect(o.x,o.y,o.w,o.h);});drawLamumu(player.x,player.y,player.sliding);hudScore.textContent="Score: "+Math.floor(score);hudCoins.textContent="Crops: "+Math.floor(coins);hudDist.textContent="Dist: "+Math.floor(dist)+"m";const pu=[];if(power.magnet>0)pu.push("🧲 "+power.magnet.toFixed(0)+"s");if(power.double>0)pu.push("✨ "+power.double.toFixed(0)+"s");if(power.speed>0)pu.push("⚡ "+power.speed.toFixed(0)+"s");hudPU.textContent="Power-ups: "+(pu.length?pu.join("  "):"—");}
+
+function drawBackground(t,speed){ctx.save();ctx.fillStyle="#0b1430";ctx.fillRect(0,GROUND_Y,canvas.width,canvas.height-GROUND_Y);ctx.restore();}
+function drawLamumu(px,py,sliding){ctx.save();ctx.translate(px,py);ctx.fillStyle="#fff";const bodyH=sliding?42:54;const bodyY=sliding?12:0;ctx.fillRect(0,bodyY,60,bodyH);ctx.restore();}
+function drawCoin(x,y,r){ctx.save();ctx.fillStyle="#ffd166";ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawPowerupIcon(kind,x,y,w,h,glow){ctx.save();ctx.fillStyle=kind==="magnet"?"#ff5b5b":kind==="double"?"#e8ff7a":"#a8d1ff";ctx.fillRect(x,y,w,h);ctx.restore();}
+
+let lastTs=0;
+function loop(ts){requestAnimationFrame(loop);if(!lastTs)lastTs=ts;const dt=Math.min(48,ts-lastTs);lastTs=ts;if(gameState===STATE.PLAY)update(dt);render(ts);}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
+
